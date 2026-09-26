@@ -1,9 +1,10 @@
-name: vs2026-ci
+name: vs2026-fork-ci
 
+# 在你自己的 fork 上 push 任意分支即自动编译，无需本地装 WDK/SDK
 on:
   push:
     branches:
-      - '**' # matches all branch names, including ones with slashes 
+      - '**' # matches all branch names, including ones with slashes
     tags:
       - 'v*'
     paths-ignore:
@@ -20,19 +21,30 @@ on:
       - '**.cmd'
       - '**.bat'
       - '**.md'
-      
+
+  workflow_dispatch:
+
 env:
+  # WDK for Windows 11, version 22H2 (官方 vs2022.yml 用的同一个)
+  WDK_URL: https://go.microsoft.com/fwlink/?linkid=2196230
+
+  # Path to the solution file relative to the root of the project.
   SOLUTION_FILE_PATH: ./hyperdbg/hyperdbg.sln
+
   RELEASE_ZIP_FILE_NAME: hyperdbg
+
   BUILD_BIN_DIR: ./hyperdbg/build/bin/
 
 jobs:
   win-amd64-build:
-    runs-on: windows-2025-vs2026
+    # 注意：官方原版用的是他们自家的 runner (windows-2025-vs2026)，
+    # fork 里没有那台机器，改成 GitHub 公共的 windows-2025
+    runs-on: windows-2025
     strategy:
       matrix:
         BUILD_CONFIGURATION: [release, debug]
         PLATFORM: [x64]
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -42,6 +54,12 @@ jobs:
 
     - name: Checkout submodules recursively
       run: git submodule update --init --recursive --remote
+
+    - name: Setup WDK
+      run: |
+        $wdkSetupPath = "$Env:TEMP\wdksetup.exe"
+        (New-Object Net.WebClient).DownloadFile('${{env.WDK_URL}}', $wdkSetupPath)
+        Start-Process -FilePath $wdkSetupPath -ArgumentList "/quiet" -NoNewWindow -Wait
 
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v3
@@ -73,7 +91,7 @@ jobs:
   deploy-release:
     name: Deploy release
     needs: win-amd64-build
-    runs-on: windows-2025-vs2026
+    runs-on: windows-2025
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Download build files from "build" job
